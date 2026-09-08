@@ -2,7 +2,7 @@
 name: tidy-up
 description: >-
   Restructure a selected frame or component with auto layout, clean layer
-  names, 4px-grid-normalized spacing, and optional variable binding.
+  names, 4px-grid-normalized spacing, and variable availability check.
   Analyzes vision + layer data to infer semantic groups, normalizes
   asymmetric margins and inconsistent gaps, and rebuilds the hierarchy in
   place. Invoke with "tidy up", "restructure", "clean up layout", "add auto
@@ -14,7 +14,7 @@ description: >-
 
 # Tidy Up — Auto Layout Restructuring
 
-**Ver:** ver.202609071830
+**Ver:** ver.202609082300
 
 Restructure a selected frame or component into a well-organized, auto-layout-based hierarchy — clean layer names, normalized spacing, and proper nesting — while preserving the original visual appearance.
 
@@ -29,100 +29,87 @@ Restructure a selected frame or component into a well-organized, auto-layout-bas
 
 ## Steps
 
-### 1. Analyze the Current State (Vision + Data + Variables)
+### 1. Capture the "Before" State (Critical — Do This First)
 
-- Capture a screenshot with `await node.screenshot()` to visually understand the overall structure
-- Use the `buildTree` pattern to inspect the layer tree — get each element's type, position, size, fills, and text content
-- Cross-reference the screenshot with layer data to determine:
-  - Which elements belong to semantic groups (header, section, card, footer, etc.)
-  - Whether there are repeating patterns (card grids, list items, etc.)
-  - Whether absolute positioning is intentional (decorative overlaps) or just manual placement
+**Before making ANY changes, capture and preserve the original state for comparison:**
 
-**Check for existing variables and styles in the file:**
+- Take a screenshot of the original frame with `await node.screenshot()` — this is the **reference image** for all later verification
+- Record the full layer tree with positions, sizes, and fills of every child element
+- For each element, record its **absolute pixel position and size** within the frame — these are ground truth for spacing verification later
 
-Before restructuring, scan the file for variable collections and local styles that can be bound to nodes:
+**Build a spacing map:** For every element, compute and store:
+- Distance from frame left edge (x)
+- Distance from frame right edge (parentWidth - x - width)
+- Distance from previous sibling's bottom edge (gap between elements)
+- Distance from frame top edge (for first element in a group)
+- Distance from frame bottom edge (for last element in a group)
+
+This spacing map is the authoritative reference for **macro-level spacing** (see "What to preserve vs. what to correct" below).
+
+### 2. Check for Existing Variables and Styles
+
+Scan the file for variable collections and local styles — this informs the user about what's available for later binding with a dedicated skill (e.g. `figma-tokenize`):
 
 - Use `figma.variables.getLocalVariableCollectionsAsync()` to list all variable collections
-- Use `figma.variables.getLocalVariablesAsync('COLOR')` to find color variables
-- Use `figma.variables.getLocalVariablesAsync('FLOAT')` to find number variables (spacing, radius, etc.)
-- Use `figma.getLocalPaintStylesAsync()` to find paint styles
-- Use `figma.getLocalEffectStylesAsync()` to find effect styles
-- Build a lookup map of available variables by value (e.g., map hex colors to color variables, spacing values to number variables) for use during the rebuild step
-- If no variables or styles exist, proceed without binding — this step is opportunistic, not required
+- Use `figma.variables.getLocalVariablesAsync('COLOR')` to count color variables
+- Use `figma.variables.getLocalVariablesAsync('FLOAT')` to count number variables (spacing, radius, etc.)
+- Use `figma.getLocalPaintStylesAsync()` to count paint styles
+- Use `figma.getLocalEffectStylesAsync()` to count effect styles
 
-**If variables or styles ARE found, ask the user before proceeding:**
+**This skill does NOT bind variables.** It only checks and reports their presence. If variables or styles are found, mention them in the final verification report and suggest the user run a variable binding skill (e.g. `figma-tokenize`) afterward.
 
-Present the user with a summary of what was found (e.g., "I found 12 color variables and 5 spacing variables in this file") and ask which variable binding strategy they prefer:
+### 3. Normalize Spacing Values
 
-1. **Bind to nearest match** — When a node's value is close to an existing variable (within tolerance: ±2/255 per color channel, ±2px for numbers), bind to that variable. The variable's canonical value replaces the original. Best for aligning with an established design system.
-2. **Create new variables** — Create new variables for values that don't match any existing ones, and bind them. Best for preserving exact original values while making them manageable. Name new variables based on their semantic role (e.g., `card-bg`, `section-padding`).
-3. **Skip binding** — Leave all values hardcoded. Best for quick mockups or temporary designs where variable management isn't needed yet.
+**What to preserve vs. what to correct:**
 
-Proceed with the user's chosen strategy. If the user doesn't have a preference, default to option 1 (bind to nearest match).
+Not all spacing in the original should be faithfully reproduced. The key distinction is between **macro-level layout rhythm** (intentional) and **micro-level element misalignment** (sloppy):
 
-### 2. Record and Normalize Original Spacing
+**PRESERVE (macro-level spacing) — derive padding/itemSpacing from these:**
+- Gaps between major sections (header → hero → card grid → footer)
+- Padding within sections (content inset from section edges)
+- Gaps between sibling groups (e.g., space between card row and section title)
+- Overall proportions and visual rhythm of the page
 
-**Before restructuring, always record the original margins and spacing.** These must be accurately reflected as auto layout padding and itemSpacing.
+**CORRECT (micro-level misalignment) — let auto layout fix these:**
+- Off-center text in buttons (e.g., left 68px / right 32px → auto layout CENTER alignment fixes this automatically)
+- Inconsistent left-edge alignment of elements within a card or section (e.g., title at x:36, description at x:28, price at x:28 → uniform padding corrects this)
+- Slightly misaligned Y positions of sibling cards (e.g., Y 358, 360, 362 → auto layout row alignment fixes this)
+- Asymmetric padding that is clearly unintentional (e.g., left 23px / right 25px → normalize to 24px)
 
-- Calculate top/bottom/left/right margins from each element's position (x, y) within its parent frame
-- Calculate gaps between elements (e.g., next element's y − current element's (y + height))
-- Identify whether elements have surrounding whitespace (→ parent frame padding) or sit flush against edges
-- Distinguish intentional margins from edge-to-edge placement
+**Inferring alignment intent from position:**
+- Default to CENTER alignment — most elements in loosely built designs are intended to be centered
+- Use MIN (left-align) or MAX (right-align) only when the element's position is **clearly biased** to one side — e.g., left margin is less than 30% of right margin, or vice versa
+- When in doubt, choose CENTER — it's more likely to match the designer's intent than preserving a lopsided placement
 
-Example: if an image is at (25, 19) inside a 378px-wide frame, that indicates ~25px horizontal and 19px top padding — preserve these as parent frame padding.
+**Rule of thumb:** If the spacing variation looks like someone carefully placed it (consistent across sections, specific proportions), preserve it. If it looks like someone roughly dragged elements into position (slightly off-center, inconsistent edges within a group), correct it.
 
-**Spacing normalization (important):**
+**Normalization rules for preserved spacing:**
+- Round to the nearest multiple of 4 (4, 8, 12, 16, 20, 24, 32, 40, 48…)
+- Preserve clearly intentional values (e.g., exactly 15px or 30px)
+- **Never default padding or itemSpacing to 0** unless the spacing map genuinely shows elements flush against the frame edge or touching each other with no gap
 
-Loosely built designs often have asymmetric margins and inconsistent gaps. Normalize to clean values using these rules:
-
-- **Asymmetric left/right margins** (e.g., left 23px / right 25px) → round to the nearest multiple of 4 (→ 24px)
-- **Inconsistent gaps** (e.g., 12px, 14px, 16px mixed) → unify to the most common value or the nearest multiple of 4
-- **Slightly misaligned Y positions** (e.g., cards at Y 358, 360, 362) → auto layout handles alignment automatically
-- **Use a 4px grid** as the rounding base (4, 8, 12, 16, 20, 24, 32, 40, 48…). Round fractional values to the nearest multiple of 4
-- **Preserve clearly intentional values** (e.g., exactly 15px or 30px) — don't force them onto the 4px grid if they look deliberate
-
-### 3. Design the Structure
+### 4. Design the Structure
 
 Based on the visual structure observed in the screenshot, plan the auto layout tree:
 
 - Root frame: VERTICAL (vertically stacked sections)
 - Header / Footer: HORIZONTAL, SPACE_BETWEEN or CENTER
-- Content sections: VERTICAL, with appropriate padding
-- Horizontal rows (card grids, nav items): HORIZONTAL, uniform itemSpacing
+- Content sections: VERTICAL, with padding derived from Step 3
+- Horizontal rows (card grids, nav items): HORIZONTAL, with itemSpacing derived from Step 3
 - Individual cards: VERTICAL, CENTER-aligned
+- Buttons: HORIZONTAL, CENTER-aligned (auto layout centering replaces manual text positioning)
 
-### 4. Rebuild
+### 5. Rebuild
 
 **Critical: never remove() existing nodes — move them to new parent frames with appendChild.**
 
 1. Create all structural frames first (header, sections, cards, etc.)
 2. Move existing text and shape nodes into the correct structural frame via `appendChild`
 3. For rectangles used as backgrounds, transfer their fill color to the parent frame's `fills` property, then delete the rectangle
-4. For "rectangle + text" button patterns, merge into a single frame with padding
+4. For "rectangle + text" button patterns, merge into a single frame with padding and CENTER alignment — do not reproduce the original off-center positioning
 5. Convert the root frame to auto layout last, then append the structural frames
 6. Set `layoutSizingHorizontal = 'FILL'` on child frames
-
-### 5. Bind Variables and Styles
-
-Apply the variable binding strategy chosen by the user in Step 1:
-
-**If "Bind to nearest match":**
-- **Color variables:** When a node's fill color is within tolerance of a color variable's value, bind using `figma.variables.setBoundVariableForPaint(paint, 'color', variable)`
-- **Spacing variables:** When padding or itemSpacing values match (±2px) a number variable, bind using `setBoundVariable('paddingTop', variable)`, `setBoundVariable('itemSpacing', variable)`, etc.
-- **Corner radius variables:** When a cornerRadius matches a number variable, bind using `setBoundVariable('topLeftRadius', variable)`, etc.
-- **Paint styles:** When a fill matches a local paint style, apply with `node.fillStyleId = styleId`
-- **Effect styles:** When effects match a local effect style, apply with `node.effectStyleId = styleId`
-- **Tolerance:** ±2/255 per channel for colors, ±2px for numbers
-- If no match is found within tolerance, leave as hardcoded
-
-**If "Create new variables":**
-- For each unique hardcoded value that has no existing match, create a new variable in an appropriate collection
-- Name variables semantically based on their role (e.g., `card-bg`, `header-padding`, `button-radius`)
-- Bind the new variable to all nodes using that value
-- If a collection doesn't exist yet, create one (e.g., "Colors", "Spacing")
-
-**If "Skip binding":**
-- Leave all values hardcoded — no variable operations
+7. **Apply the normalized padding and itemSpacing values from Step 3 to every structural frame** — do not skip this or leave defaults
 
 ### 6. Rename Layers
 
@@ -132,13 +119,25 @@ Give every node a meaningful kebab-case name:
 - `Text 3` → content-based name (`hero-title`, `nav-about`, `price`, etc.)
 - `Frame 1` → section name (`hero-section`, `menu-section`, etc.)
 
-### 7. Verify
+### 7. Verify and Adjust (Critical — Do Not Skip)
 
-- Capture a screenshot of the restructured frame with `await node.screenshot()`
-- Compare against the original to confirm **visual appearance is preserved** (especially margins and spacing)
-- Output the layer tree to verify structure is correct
-- Report how many variables/styles were bound (if any), and which strategy was used
-- Fix any issues found
+**This step is mandatory. Never report completion without running this verification.**
+
+1. Take a screenshot of the restructured frame with `await node.screenshot()`
+2. **Compare side-by-side with the "Before" screenshot from Step 1** — visually check:
+   - Are section-level spacings preserved? (gaps between hero, cards, footer, etc.)
+   - Are section-internal paddings preserved? (content inset from section edges)
+   - Are element sizes preserved? (images, cards not squished or stretched)
+   - Is the overall frame height roughly the same?
+   - Have micro-level misalignments been corrected? (text centered in buttons, elements aligned within cards)
+3. **If any macro-level spacing looks wrong** (sections too close together, padding missing, elements squished):
+   - Re-read the spacing map from Step 1
+   - Identify which padding or itemSpacing values are incorrect
+   - Fix them with a targeted `evaluate_script` call
+   - Take another screenshot and re-verify
+4. **Repeat the fix-and-verify cycle** until the result visually matches the original at the macro level while being cleaner at the micro level
+5. Output the final layer tree
+6. If variables/styles were found in Step 2, remind the user they can run a variable binding skill afterward
 
 ## Important Notes
 
