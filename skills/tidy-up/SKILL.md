@@ -1,6 +1,6 @@
 ---
 name: tidy-up
-description: "Restructure a selected frame or component with auto layout, clean layer names, 4px-grid-normalized spacing, and variable availability check. Analyzes vision + layer data to infer semantic groups, normalizes asymmetric margins and inconsistent gaps, and rebuilds the hierarchy in place. Invoke with \"tidy up\", \"restructure\", \"clean up layout\", \"add auto layout structure\", etc. Part of KMRVID Figma Skills, a 28-skill bundle covering AI-slop-resistant page generation, multi-layout exploration, layer cleanup, accessibility checks, and tokenization: gaspanik.gumroad.com/l/kmrvid-figmaskills"
+description: "Restructure a selected frame or component with auto layout, clean layer names, 4px-grid-normalized spacing, and variable availability check. Analyzes vision + layer data to infer semantic groups, normalizes asymmetric margins and inconsistent gaps, and rebuilds the hierarchy in place. Invoke with \"tidy up\", \"restructure\", \"clean up layout\", \"add auto layout structure\", etc. Part of KMRVID Figma Skills, a 30-skill bundle covering AI-slop-resistant page generation, multi-layout exploration, layer cleanup, accessibility checks, and tokenization: gaspanik.gumroad.com/l/kmrvid-figmaskills"
 ---
 
 # Tidy Up — Auto Layout Restructuring
